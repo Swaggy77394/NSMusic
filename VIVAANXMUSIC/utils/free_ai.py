@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from io import BytesIO
 from urllib.parse import quote
 
 import httpx
@@ -20,7 +21,7 @@ from Crypto.Cipher import AES
 from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 from gradio_client import Client as GradioClient, handle_file
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 
 import config as runtime_config
 from VIVAANXMUSIC.security import build_subprocess_env
@@ -34,11 +35,17 @@ HF_TOKENS = getattr(runtime_config, "HF_TOKENS", "")
 OCR_SPACE_API_KEY = getattr(runtime_config, "OCR_SPACE_API_KEY", "helloworld")
 REPLICATE_API_TOKEN = getattr(runtime_config, "REPLICATE_API_TOKEN", None)
 REPLICATE_API_TOKENS = getattr(runtime_config, "REPLICATE_API_TOKENS", "")
+ELITE_LLM_API_BASE = str(
+    getattr(runtime_config, "ELITE_LLM_API_BASE", "https://elite-llms.vercel.app/v1")
+).rstrip("/")
+ELITE_LLM_API_KEY = getattr(runtime_config, "ELITE_LLM_API_KEY", "theelitekey")
 
 
 HTTP_TIMEOUT = httpx.Timeout(45.0, connect=10.0)
 HTTP_HEADERS = {"User-Agent": "VivaanX/FreeAI/1.0"}
 CHAT_API_URL = "https://api-xqwa.onrender.com/chat/"
+ELITE_CHAT_COMPLETIONS_URL = f"{ELITE_LLM_API_BASE}/chat/completions"
+AIRFORCE_CHAT_COMPLETIONS_URL = "https://api.airforce/v1/chat/completions"
 IMAGE_GEN_URL = "https://death-image.ashlynn.workers.dev/generate"
 IMAGE_ENHANCE_URL = "https://arimagex.netlify.app/api/enhance"
 IMAGE_REMOVEBG_URL = "https://arimagex.netlify.app/api/removebg"
@@ -87,7 +94,33 @@ DETAILED_VISION_PROMPT = (
 )
 VISION_PROVIDER_TIMEOUT = 50
 OCR_VISIBLE_TEXT_LIMIT = 900
-CHAT_MODEL_CANDIDATES = ("gpt-4", "gpt-4o-mini")
+CHAT_MODEL_CANDIDATES = ("gpt-4o-mini", "gpt-4")
+ELITE_CHAT_MODEL_FALLBACKS = {
+    "eliteai": ("gpt-5-mini", "gpt-4o-mini", "qwen3-235b-a22b-2507", "deepseek-chat"),
+    "chatgpt": ("gpt-5-mini", "gpt-4o-mini", "gpt-4.1", "gpt-4o"),
+    "gpt": ("gpt-5-mini", "gpt-4o-mini", "gpt-4.1", "gpt-4o"),
+    "jarvis": ("gpt-5-mini", "qwen3-235b-a22b-2507", "deepseek-chat", "gpt-4o-mini"),
+    "assis": ("gpt-5-mini", "qwen3-235b-a22b-2507", "deepseek-chat", "gpt-4o-mini"),
+    "gemini": ("gemini-2.0-flash", "gpt-5-mini", "gpt-4o-mini"),
+    "bard": ("gemini-2.0-flash", "gpt-5-mini", "gpt-4o-mini"),
+    "llama": ("llama-4-scout", "qwen3-235b-a22b-2507", "deepseek-chat"),
+    "mistral": ("qwen3-235b-a22b-2507", "deepseek-chat", "llama-4-scout"),
+    "claude": ("claude-sonnet-4.6", "claude-opus-4.6", "gpt-5-mini"),
+    "geminivision": ("gemini-2.0-flash", "gpt-5-mini", "qwen3-235b-a22b-2507"),
+}
+AIRFORCE_CHAT_MODEL_FALLBACKS = {
+    "eliteai": ("gpt-4o-mini", "deepseek-chat", "llama-3.3-70b"),
+    "chatgpt": ("gpt-4o-mini", "gpt-4o", "deepseek-chat"),
+    "gpt": ("gpt-4o-mini", "gpt-4o", "deepseek-chat"),
+    "jarvis": ("gpt-4o-mini", "deepseek-chat", "llama-3.3-70b"),
+    "assis": ("gpt-4o-mini", "deepseek-chat", "llama-3.3-70b"),
+    "gemini": ("gpt-4o-mini", "deepseek-chat"),
+    "bard": ("gpt-4o-mini", "deepseek-chat"),
+    "llama": ("llama-3.3-70b", "gpt-4o-mini", "deepseek-chat"),
+    "mistral": ("mistral-small-latest", "gpt-4o-mini", "deepseek-chat"),
+    "claude": ("gpt-4o-mini", "deepseek-chat"),
+    "geminivision": ("gpt-4o-mini", "deepseek-chat"),
+}
 CHAT_ALIAS_PROFILES = {
     "eliteai": {
         "display_name": "Elite AI",
@@ -215,6 +248,13 @@ BLOCKED_RESPONSE_MARKERS = (
     'add a "api_key"',
     "no yupp accounts configured",
     "invalid model",
+    "does not exist or is not available",
+    "authentication required",
+    "queue full",
+    "bad gateway",
+    "application error",
+    "internal server error",
+    "service unavailable",
     "something went wrong. please try again later.",
 )
 VISION_UPSTREAM_ERROR_MARKERS = (
@@ -241,6 +281,10 @@ PROMO_URL_PATTERN = re.compile(
 )
 TRY_AGAIN_PATTERN = re.compile(
     r"try again in (\d+):(\d+):(\d+)",
+    re.IGNORECASE,
+)
+SECONDS_RETRY_PATTERN = re.compile(
+    r"(?:try again|guaranteed response is) in (\d+) seconds?",
     re.IGNORECASE,
 )
 DEFAULT_VISION_PATTERN = re.compile(r"^describe this image\.?$", re.IGNORECASE)
@@ -377,6 +421,12 @@ def _path_to_data_uri(path: str) -> str:
 
 def _sanitize_chat_text(text: str | None) -> str:
     raw = (text or "").strip()
+    if not raw:
+        return ""
+
+    raw = THINK_BLOCK_PATTERN.sub("", raw).strip()
+    raw = re.sub(r"^```[\w-]*\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
     if not raw:
         return ""
 
@@ -526,6 +576,36 @@ def _write_temp_image(image_bytes: bytes, mime_type: str) -> str:
         return handle.name
 
 
+def _enhance_image_locally(image_bytes: bytes) -> bytes:
+    with Image.open(BytesIO(image_bytes)) as image:
+        image.load()
+        has_alpha = image.mode in {"RGBA", "LA"} or (
+            image.mode == "P" and "transparency" in image.info
+        )
+        converted = image.convert("RGBA" if has_alpha else "RGB")
+        width, height = converted.size
+        max_side = max(width, height, 1)
+        if max_side < 2048:
+            scale = min(2.0, 2048 / max_side)
+            converted = converted.resize(
+                (
+                    max(1, int(round(width * scale))),
+                    max(1, int(round(height * scale))),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+
+        converted = ImageEnhance.Contrast(converted).enhance(1.08)
+        converted = ImageEnhance.Color(converted).enhance(1.04)
+        converted = converted.filter(
+            ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=3)
+        )
+
+        buffer = BytesIO()
+        converted.save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue()
+
+
 def _prepare_video_reference_image(image_bytes: bytes, mime_type: str) -> str:
     source_path = _write_temp_image(image_bytes, mime_type)
     prepared_path: str | None = None
@@ -586,6 +666,9 @@ def _cooldown_seconds_from_error(message: str) -> int | None:
     if match:
         hours, minutes, seconds = map(int, match.groups())
         return (hours * 3600) + (minutes * 60) + seconds
+    seconds_match = SECONDS_RETRY_PATTERN.search(text)
+    if seconds_match:
+        return max(5, int(seconds_match.group(1)))
 
     lowered = text.lower()
     if (
@@ -596,6 +679,16 @@ def _cooldown_seconds_from_error(message: str) -> int | None:
         or "insufficient credit" in lowered
     ):
         return 30 * 60
+    if (
+        "429" in lowered
+        or "rate limit" in lowered
+        or "too many requests" in lowered
+        or "queue full" in lowered
+        or "service unavailable" in lowered
+        or "bad gateway" in lowered
+        or "application error" in lowered
+    ):
+        return 5 * 60
     if "up to tasks can be run at a time" in lowered:
         return 60
     if "queue is too long" in lowered:
@@ -2035,7 +2128,142 @@ async def _run_video_provider_batch(
     return None
 
 
-async def _chat_request(
+def _chat_models_for_alias(alias: str) -> tuple[str, ...]:
+    models = ELITE_CHAT_MODEL_FALLBACKS.get(alias.lower())
+    if models:
+        return models
+    return ELITE_CHAT_MODEL_FALLBACKS["gpt"]
+
+
+def _airforce_models_for_alias(alias: str) -> tuple[str, ...]:
+    models = AIRFORCE_CHAT_MODEL_FALLBACKS.get(alias.lower())
+    if models:
+        return models
+    return AIRFORCE_CHAT_MODEL_FALLBACKS["gpt"]
+
+
+def _extract_openai_error(payload) -> str:
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("detail") or error.get("code")
+            if message:
+                return str(message)
+        if error:
+            return str(error)
+    return _extract_json_error(payload)
+
+
+def _extract_openai_content(payload) -> tuple[str, str]:
+    if not isinstance(payload, dict):
+        return "", ""
+
+    choices = payload.get("choices") or []
+    if not isinstance(choices, list) or not choices:
+        return "", ""
+
+    first = choices[0] or {}
+    message = first.get("message") or {}
+    content = message.get("content")
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+            elif item:
+                parts.append(str(item))
+        content = "\n".join(parts)
+    elif content is None:
+        content = first.get("text") or payload.get("response")
+
+    return str(payload.get("model") or ""), _sanitize_chat_text(str(content or ""))
+
+
+async def _elite_chat_request(
+    client: httpx.AsyncClient,
+    prompt: str,
+    model: str,
+    system_prompt: str | None = None,
+) -> ChatResult:
+    if not ELITE_LLM_API_BASE:
+        raise FreeAIError("Elite LLM API base is not configured.")
+    if not ELITE_LLM_API_KEY:
+        raise FreeAIError("Elite LLM API key is not configured.")
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    response = await client.post(
+        ELITE_CHAT_COMPLETIONS_URL,
+        headers={
+            "Authorization": f"Bearer {ELITE_LLM_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": messages,
+            "temperature": 0.6,
+            "max_tokens": 1800,
+        },
+    )
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise FreeAIError(
+            f"Elite LLM returned a non-JSON response ({response.status_code})."
+        ) from exc
+
+    if response.status_code != 200:
+        raise FreeAIError(_extract_openai_error(payload))
+
+    returned_model, cleaned = _extract_openai_content(payload)
+    if not cleaned:
+        raise FreeAIError("Elite LLM response was empty or blocked.")
+    return ChatResult(model=returned_model or model, content=cleaned)
+
+
+async def _airforce_chat_request(
+    client: httpx.AsyncClient,
+    prompt: str,
+    model: str,
+    system_prompt: str | None = None,
+) -> ChatResult:
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    response = await client.post(
+        AIRFORCE_CHAT_COMPLETIONS_URL,
+        headers={"Content-Type": "application/json"},
+        json={
+            "model": model,
+            "messages": messages,
+            "temperature": 0.6,
+            "max_tokens": 1800,
+        },
+    )
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise FreeAIError(
+            f"Airforce API returned a non-JSON response ({response.status_code})."
+        ) from exc
+
+    if response.status_code != 200:
+        raise FreeAIError(_extract_openai_error(payload))
+
+    returned_model, cleaned = _extract_openai_content(payload)
+    if not cleaned:
+        raise FreeAIError("Airforce API response was empty or blocked.")
+    return ChatResult(model=returned_model or model, content=cleaned)
+
+
+async def _legacy_chat_request(
     client: httpx.AsyncClient,
     prompt: str,
     model: str,
@@ -2046,7 +2274,12 @@ async def _chat_request(
         params["systemprompt"] = system_prompt
 
     response = await client.get(CHAT_API_URL, params=params)
-    payload = response.json()
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise FreeAIError(
+            f"Legacy chat returned a non-JSON response ({response.status_code})."
+        ) from exc
     if response.status_code != 200 or payload.get("successful") != "success":
         raise FreeAIError(_extract_json_error(payload))
 
@@ -2079,22 +2312,75 @@ async def generate_chat_response(
         follow_redirects=True,
         trust_env=False,
     ) as client:
+        for model in _chat_models_for_alias(alias):
+            provider_key = f"chat:elite:{model}"
+            if _provider_cooldown_remaining(provider_key) > 0:
+                failures.append(f"Elite {model}: cooling down")
+                continue
+            try:
+                result = await _elite_chat_request(
+                    client,
+                    prompt,
+                    model,
+                    combined_system_prompt,
+                )
+                _clear_provider_cooldown(provider_key)
+                return ChatResult(
+                    model=display_name,
+                    content=result.content,
+                )
+            except (httpx.HTTPError, FreeAIError) as exc:
+                message = str(exc)
+                _set_provider_cooldown(provider_key, message)
+                failures.append(f"Elite {model}: {message}")
+
+        for model in _airforce_models_for_alias(alias):
+            provider_key = f"chat:airforce:{model}"
+            if _provider_cooldown_remaining(provider_key) > 0:
+                failures.append(f"Airforce {model}: cooling down")
+                continue
+            try:
+                result = await _airforce_chat_request(
+                    client,
+                    prompt,
+                    model,
+                    combined_system_prompt,
+                )
+                _clear_provider_cooldown(provider_key)
+                return ChatResult(
+                    model=display_name,
+                    content=result.content,
+                )
+            except (httpx.HTTPError, FreeAIError) as exc:
+                message = str(exc)
+                _set_provider_cooldown(provider_key, message)
+                failures.append(f"Airforce {model}: {message}")
+
         for model in CHAT_MODEL_CANDIDATES:
             for attempt in range(2):
+                provider_key = f"chat:legacy:{model}"
+                if _provider_cooldown_remaining(provider_key) > 0:
+                    failures.append(f"Legacy {model}: cooling down")
+                    break
                 try:
-                    result = await _chat_request(
+                    result = await _legacy_chat_request(
                         client,
                         prompt,
                         model,
                         combined_system_prompt,
                     )
+                    _clear_provider_cooldown(provider_key)
                     return ChatResult(
                         model=display_name,
                         content=result.content,
                     )
                 except (httpx.HTTPError, FreeAIError) as exc:
-                    failures.append(f"{model} attempt {attempt + 1}: {exc}")
-    details = "\n".join(failures[:4])
+                    message = str(exc)
+                    _set_provider_cooldown(provider_key, message)
+                    failures.append(f"Legacy {model} attempt {attempt + 1}: {message}")
+                    if _provider_cooldown_remaining(provider_key) > 0:
+                        break
+    details = "\n".join(failures[:8])
     raise FreeAIError(f"Chat service is temporarily unavailable.\n{details}")
 
 
@@ -3061,27 +3347,39 @@ async def generate_image(prompt: str) -> bytes:
         follow_redirects=True,
         trust_env=False,
     ) as client:
-        response = await client.get(IMAGE_GEN_URL, params=params)
-        try:
-            payload = response.json()
-        except Exception as exc:
-            raise FreeAIError("Image generation service returned an invalid response.") from exc
+        failures: list[str] = []
+        for attempt in range(3):
+            try:
+                response = await client.get(IMAGE_GEN_URL, params=params)
+                try:
+                    payload = response.json()
+                except Exception as exc:
+                    raise FreeAIError(
+                        "Image generation service returned an invalid response."
+                    ) from exc
 
-        images = payload.get("images") or [] if isinstance(payload, dict) else []
-        if response.status_code != 200 or not images:
-            detail = (
-                _extract_json_error(payload)
-                if isinstance(payload, dict)
-                else "Image generation service did not return an image."
-            )
-            if not detail or detail == "Unknown upstream error.":
-                detail = "Image generation service did not return an image."
-            raise FreeAIError(detail)
+                images = payload.get("images") or [] if isinstance(payload, dict) else []
+                if response.status_code != 200 or not images:
+                    detail = (
+                        _extract_json_error(payload)
+                        if isinstance(payload, dict)
+                        else "Image generation service did not return an image."
+                    )
+                    if not detail or detail == "Unknown upstream error.":
+                        detail = "Image generation service did not return an image."
+                    raise FreeAIError(detail)
 
-        image_response = await client.get(images[0])
-        if image_response.status_code != 200:
-            raise FreeAIError("Generated image could not be downloaded.")
-        return image_response.content
+                image_response = await client.get(images[0])
+                if image_response.status_code != 200:
+                    raise FreeAIError("Generated image could not be downloaded.")
+                return image_response.content
+            except (httpx.HTTPError, FreeAIError) as exc:
+                failures.append(str(exc))
+                if attempt < 2:
+                    await asyncio.sleep(1 + attempt)
+
+    details = "\n".join(failures[-3:])
+    raise FreeAIError(f"Image generation service is temporarily unavailable.\n{details}")
 
 
 async def process_image_bytes(
@@ -3098,30 +3396,42 @@ async def process_image_bytes(
         raise FreeAIError(f"Unsupported image mode: {mode}")
 
     payload = {"imageUrl": _build_data_uri(mime_type, image_bytes)}
-    async with httpx.AsyncClient(
-        timeout=HTTP_TIMEOUT,
-        headers=HTTP_HEADERS,
-        follow_redirects=True,
-        trust_env=False,
-    ) as client:
-        response = await client.post(endpoint, json=payload)
-        content_type = (response.headers.get("content-type") or "").lower()
-        if response.status_code != 200:
+    try:
+        async with httpx.AsyncClient(
+            timeout=HTTP_TIMEOUT,
+            headers=HTTP_HEADERS,
+            follow_redirects=True,
+            trust_env=False,
+        ) as client:
+            response = await client.post(endpoint, json=payload)
+            content_type = (response.headers.get("content-type") or "").lower()
+            if response.status_code != 200:
+                if "application/json" in content_type:
+                    raise FreeAIError(_extract_json_error(response.json()))
+                raise FreeAIError("Image processing service returned a non-200 response.")
             if "application/json" in content_type:
-                raise FreeAIError(_extract_json_error(response.json()))
-            raise FreeAIError("Image processing service returned a non-200 response.")
-        if "application/json" in content_type:
-            payload = response.json()
-            image_url = payload.get("imageUrl")
-            if not image_url:
-                raise FreeAIError(_extract_json_error(payload))
-            image_response = await client.get(image_url)
-            if image_response.status_code != 200:
-                raise FreeAIError("Processed image could not be downloaded.")
-            return image_response.content
-        if not content_type.startswith("image/"):
-            raise FreeAIError("Image processing service returned an unexpected payload.")
-        return response.content
+                payload = response.json()
+                image_url = payload.get("imageUrl")
+                if not image_url:
+                    raise FreeAIError(_extract_json_error(payload))
+                image_response = await client.get(image_url)
+                if image_response.status_code != 200:
+                    raise FreeAIError("Processed image could not be downloaded.")
+                return image_response.content
+            if not content_type.startswith("image/"):
+                raise FreeAIError(
+                    "Image processing service returned an unexpected payload."
+                )
+            return response.content
+    except Exception as exc:
+        if mode == "enhance":
+            try:
+                return await asyncio.to_thread(_enhance_image_locally, image_bytes)
+            except Exception:
+                pass
+        if isinstance(exc, FreeAIError):
+            raise
+        raise FreeAIError(f"Image processing service failed: {exc}") from exc
 
 
 async def generate_video(

@@ -4,6 +4,42 @@ from pyrogram import filters
 from pyrogram.types import Message
 from VIVAANXMUSIC import app
 
+WAIFU_IM_API_URL = "https://api.waifu.im/images"
+WAIFU_PICS_API_URL = "https://api.waifu.pics/sfw/waifu"
+WAIFU_PICS_TAGS = {
+    "waifu",
+    "neko",
+    "shinobu",
+    "megumin",
+    "bully",
+    "cuddle",
+    "cry",
+    "hug",
+    "awoo",
+    "kiss",
+    "lick",
+    "pat",
+    "smug",
+    "bonk",
+    "yeet",
+    "blush",
+    "smile",
+    "wave",
+    "highfive",
+    "handhold",
+    "nom",
+    "bite",
+    "glomp",
+    "slap",
+    "kill",
+    "kick",
+    "happy",
+    "wink",
+    "poke",
+    "dance",
+    "cringe",
+}
+
 
 @app.on_message(filters.command("waifu"))
 async def waifu_command_handler(_, message: Message):
@@ -27,16 +63,41 @@ async def waifu_command_handler(_, message: Message):
 
 
 def get_waifu_data(tag):
+    normalized_tag = (tag or "waifu").strip().lower() or "waifu"
+
+    for params in (
+        {"IncludedTags": normalized_tag, "IsNsfw": "False", "PageSize": 1},
+        {"IncludedTags": "waifu", "IsNsfw": "False", "PageSize": 1},
+        {"IsNsfw": "False", "PageSize": 1},
+    ):
+        try:
+            response = requests.get(
+                WAIFU_IM_API_URL,
+                params=params,
+                timeout=12,
+            )
+            if response.status_code == 200:
+                payload = response.json()
+                items = payload.get("items") or []
+                if items:
+                    return {
+                        "images": [{"url": items[0].get("url")}],
+                        "source": "waifu.im",
+                    }
+        except Exception:
+            pass
+
+    fallback_tag = normalized_tag if normalized_tag in WAIFU_PICS_TAGS else "waifu"
     try:
         response = requests.get(
-            "https://api.waifu.im/search",
-            params={
-                "included_tags": tag,
-                "height": ">=2000"
-            },
+            f"{WAIFU_PICS_API_URL.rsplit('/', 1)[0]}/{fallback_tag}",
             timeout=12,
         )
         if response.status_code == 200:
-            return response.json()
-    except:
-        return None
+            image_url = response.json().get("url")
+            if image_url:
+                return {"images": [{"url": image_url}], "source": "waifu.pics"}
+    except Exception:
+        pass
+
+    return None
