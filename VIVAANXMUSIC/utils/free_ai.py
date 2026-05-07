@@ -275,6 +275,141 @@ IMAGE_EDIT_ERROR_MARKERS = (
     "upstream gradio app has raised an exception",
     "provider timed out",
 )
+GENERATION_SAFETY_MESSAGE = (
+    "I can't generate that image or video. Please use a safe prompt without porn, "
+    "nudity, drugs, abuse, gore, hate, or other harmful content."
+)
+GENERATION_BLOCKLIST = {
+    "sexual": (
+        "porn",
+        "porns",
+        "porno",
+        "pornos",
+        "pornographic",
+        "xxx",
+        "nsfw",
+        "nude",
+        "nudes",
+        "nudity",
+        "naked",
+        "sex",
+        "sexy",
+        "sexual",
+        "erotic",
+        "erotica",
+        "fetish",
+        "fetishes",
+        "strip",
+        "stripping",
+        "stripper",
+        "strippers",
+        "lingerie",
+        "underwear",
+        "breast",
+        "breasts",
+        "boobs",
+        "boob",
+        "butt",
+        "ass",
+        "asses",
+        "blowjob",
+        "blowjobs",
+        "handjob",
+        "handjobs",
+        "cum",
+        "cumming",
+        "orgasm",
+        "orgasms",
+        "onlyfans",
+    ),
+    "sexual_abuse": (
+        "rape",
+        "raped",
+        "raping",
+        "molest",
+        "molests",
+        "molested",
+        "molestation",
+        "sexual abuse",
+        "sexual abusing",
+        "child abuse",
+        "child porn",
+        "child porno",
+        "child pornography",
+        "childporn",
+        "cp",
+        "loli",
+        "lolis",
+        "lolita",
+        "lolitas",
+        "minor sex",
+        "minors sex",
+        "underage sex",
+        "underage porn",
+    ),
+    "drugs": (
+        "drug",
+        "drugs",
+        "drugged",
+        "drugging",
+        "cocaine",
+        "heroin",
+        "meth",
+        "methamphetamine",
+        "marijuana",
+        "weed",
+        "cannabis",
+        "hashish",
+        "hash",
+        "lsd",
+        "mdma",
+        "ecstasy",
+        "opium",
+        "opioid",
+        "opioids",
+        "joint",
+        "joints",
+        "bong",
+        "bongs",
+        "snorting",
+        "snort",
+        "overdose",
+        "overdoses",
+    ),
+    "abuse_violence": (
+        "abuse",
+        "abuses",
+        "abusing",
+        "abused",
+        "torture",
+        "tortures",
+        "torturing",
+        "tortured",
+        "gore",
+        "gory",
+        "bloodbath",
+        "behead",
+        "beheading",
+        "decapitate",
+        "dismember",
+        "mutilate",
+        "brutal murder",
+        "murder scene",
+        "kill someone",
+        "suicide",
+        "self harm",
+        "self-harm",
+    ),
+    "hate_extremism": (
+        "hate speech",
+        "racist propaganda",
+        "nazi propaganda",
+        "terrorist propaganda",
+        "isis propaganda",
+        "kkk",
+        "genocide",
+    ),
+}
 PROMO_URL_PATTERN = re.compile(
     r"https?://(?:t\.me|op\.wtf|ar-hosting\.pages\.dev)\S*",
     re.IGNORECASE,
@@ -451,6 +586,51 @@ def _sanitize_chat_text(text: str | None) -> str:
     cleaned = "\n".join(cleaned_lines).strip()
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned
+
+
+def _normalize_generation_prompt(prompt: str | None) -> tuple[str, str]:
+    lowered = str(prompt or "").casefold()
+    spaced = re.sub(r"[_\W]+", " ", lowered)
+    spaced = re.sub(r"\s+", " ", spaced).strip()
+    compact = re.sub(r"[^a-z0-9]+", "", lowered)
+    return spaced, compact
+
+
+def _has_obfuscated_generation_term(prompt: str | None, term: str) -> bool:
+    compact_term = re.sub(r"[^a-z0-9]+", "", str(term or "").casefold())
+    if len(compact_term) < 2:
+        return False
+    raw = str(prompt or "").casefold()
+    pattern = r"(?<![a-z0-9])" + r"[\W_]*".join(
+        re.escape(char) for char in compact_term
+    ) + r"(?![a-z0-9])"
+    return re.search(pattern, raw) is not None
+
+
+def _contains_generation_blocked_term(prompt: str | None) -> bool:
+    spaced, compact = _normalize_generation_prompt(prompt)
+    if not spaced and not compact:
+        return False
+
+    for terms in GENERATION_BLOCKLIST.values():
+        for term in terms:
+            term_spaced, term_compact = _normalize_generation_prompt(term)
+            if not term_spaced:
+                continue
+            if " " in term_spaced:
+                if term_spaced in spaced or term_compact in compact:
+                    return True
+                continue
+            if re.search(rf"\b{re.escape(term_spaced)}\b", spaced):
+                return True
+            if _has_obfuscated_generation_term(prompt, term_compact):
+                return True
+    return False
+
+
+def _ensure_safe_generation_prompt(prompt: str | None):
+    if _contains_generation_blocked_term(prompt):
+        raise FreeAIError(GENERATION_SAFETY_MESSAGE)
 
 
 def _is_identity_query(prompt: str | None) -> bool:
@@ -3231,6 +3411,7 @@ async def edit_image_bytes(
     text_prompt = (prompt or "").strip()
     if not text_prompt:
         raise FreeAIError("Please describe the image edit you want.")
+    _ensure_safe_generation_prompt(text_prompt)
     if not images:
         raise FreeAIError("Please reply to an image first.")
 
@@ -3334,6 +3515,7 @@ async def edit_image_bytes(
 
 
 async def generate_image(prompt: str) -> bytes:
+    _ensure_safe_generation_prompt(prompt)
     params = {
         "prompt": prompt,
         "image": 1,
@@ -3447,6 +3629,7 @@ async def generate_video(
 
     if not text_prompt:
         text_prompt = "make this image come alive, smooth cinematic motion"
+    _ensure_safe_generation_prompt(text_prompt)
 
     reference_image_path = None
     used_reference_image = False
