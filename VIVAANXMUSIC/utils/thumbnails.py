@@ -21,8 +21,20 @@ from VIVAANXMUSIC.core.dir import CACHE_DIR
 TITLE_FONT_PATH = "VIVAANXMUSIC/assets/thumb/font2.ttf"
 META_FONT_PATH = "VIVAANXMUSIC/assets/thumb/font.ttf"
 FALLBACK_AVATAR_URL = "https://files.catbox.moe/0ld5qc.jpg"
-THUMB_CACHE_VERSION = "v25"
-THUMBNAIL_FETCH_TIMEOUT = aiohttp.ClientTimeout(total=7.0, connect=3.0, sock_read=4.0)
+THUMB_CACHE_VERSION = "v26"
+THUMBNAIL_FETCH_TIMEOUT = aiohttp.ClientTimeout(total=16.0, connect=5.0, sock_read=8.0)
+THUMBNAIL_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.youtube.com/",
+}
+MAX_THUMBNAIL_BYTES = 8 * 1024 * 1024
+MIN_THUMBNAIL_WIDTH = 240
+MIN_THUMBNAIL_HEIGHT = 180
 YOUTUBE_THUMBNAIL_NAMES = (
     "maxresdefault.jpg",
     "hq720.jpg",
@@ -238,14 +250,21 @@ async def fetch_image_data(session: aiohttp.ClientSession, url: str) -> bytes | 
     if not url:
         return None
     try:
-        async with session.get(url) as resp:
+        async with session.get(
+            url,
+            headers=THUMBNAIL_FETCH_HEADERS,
+            allow_redirects=True,
+        ) as resp:
             if resp.status != 200:
                 return None
             content_type = str(resp.headers.get("content-type") or "").lower()
             if content_type and "image" not in content_type:
                 return None
+            content_length = int(resp.headers.get("content-length") or 0)
+            if content_length and content_length > MAX_THUMBNAIL_BYTES:
+                return None
             data = await resp.read()
-            if len(data) < 512:
+            if len(data) < 512 or len(data) > MAX_THUMBNAIL_BYTES:
                 return None
             return data
     except Exception:
@@ -253,16 +272,35 @@ async def fetch_image_data(session: aiohttp.ClientSession, url: str) -> bytes | 
 
 
 async def write_verified_image(data: bytes, output_path: str) -> bool:
+    tmp_path = f"{output_path}.tmp"
     try:
-        async with aiofiles.open(output_path, mode="wb") as file:
+        async with aiofiles.open(tmp_path, mode="wb") as file:
             await file.write(data)
 
-        with Image.open(output_path) as image:
-            image.verify()
+        with Image.open(tmp_path) as image:
+            image.load()
+            width, height = image.size
+            if width < MIN_THUMBNAIL_WIDTH or height < MIN_THUMBNAIL_HEIGHT:
+                raise ValueError("thumbnail too small")
+            if image.mode in {"RGBA", "LA"}:
+                background = Image.new("RGB", image.size, (10, 16, 24))
+                background.paste(image.convert("RGBA"), mask=image.convert("RGBA").split()[-1])
+                normalized = background
+            else:
+                normalized = image.convert("RGB")
+            normalized.save(output_path, "JPEG", quality=94, optimize=True, progressive=True)
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
         return True
     except Exception:
         try:
             os.remove(output_path)
+        except Exception:
+            pass
+        try:
+            os.remove(tmp_path)
         except Exception:
             pass
         return False
@@ -281,60 +319,212 @@ def create_local_fallback_art(
     channel: str | None = None,
 ) -> bool:
     try:
-        image = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), (12, 18, 28))
+        image = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (7, 12, 20, 255))
         draw = ImageDraw.Draw(image)
         for y in range(CANVAS_HEIGHT):
             blend = y / max(CANVAS_HEIGHT - 1, 1)
-            color = (
-                int(12 + (34 * blend)),
-                int(18 + (30 * blend)),
-                int(28 + (42 * blend)),
+            draw.line(
+                [(0, y), (CANVAS_WIDTH, y)],
+                fill=(
+                    int(7 + (18 * blend)),
+                    int(12 + (28 * blend)),
+                    int(20 + (42 * blend)),
+                    255,
+                ),
             )
-            draw.line([(0, y), (CANVAS_WIDTH, y)], fill=color)
 
-        draw.ellipse((-180, 420, 360, 960), fill=(22, 88, 108))
-        draw.ellipse((860, -170, 1420, 320), fill=(92, 62, 112))
-        draw.rectangle((0, 0, CANVAS_WIDTH, CANVAS_HEIGHT), outline=(42, 54, 68), width=6)
-        image = image.filter(ImageFilter.GaussianBlur(12))
+        image = add_glow(image, (-210, 410, 430, 950), (20, 215, 220, 76), blur_radius=130)
+        image = add_glow(image, (760, -220, 1440, 390), (165, 94, 255, 82), blur_radius=140)
+        image = add_glow(image, (210, 80, 880, 620), (42, 126, 255, 42), blur_radius=170)
+
+        texture = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        texture_draw = ImageDraw.Draw(texture)
+        for x in range(-120, CANVAS_WIDTH + 120, 86):
+            texture_draw.line(
+                [(x, 0), (x + 310, CANVAS_HEIGHT)],
+                fill=(255, 255, 255, 12),
+                width=1,
+            )
+        for i in range(18):
+            cx = 110 + (i * 67) % 1100
+            cy = 96 + (i * 43) % 510
+            radius = 3 + (i % 5)
+            texture_draw.ellipse(
+                (cx - radius, cy - radius, cx + radius, cy + radius),
+                fill=(255, 255, 255, 20 + (i % 3) * 10),
+            )
+        image = Image.alpha_composite(image, texture)
+
+        image = draw_glass_panel(
+            image,
+            (46, 48, 826, 524),
+            radius=42,
+            fill=(12, 22, 34, 116),
+            border=(255, 255, 255, 74),
+            blur_radius=22,
+        )
+        image = draw_glass_panel(
+            image,
+            ART_CARD_BOX,
+            radius=44,
+            fill=(18, 29, 42, 98),
+            border=(255, 255, 255, 72),
+            blur_radius=20,
+            show_bottom_line=False,
+        )
+        image = draw_glass_panel(
+            image,
+            PLAYBACK_BOX,
+            radius=30,
+            fill=(14, 24, 36, 104),
+            border=(255, 255, 255, 64),
+            blur_radius=16,
+            show_top_line=False,
+            show_bottom_line=False,
+        )
+        image = draw_glass_panel(
+            image,
+            BRAND_BOX,
+            radius=24,
+            fill=(18, 28, 40, 102),
+            border=(255, 255, 255, 56),
+            blur_radius=12,
+            show_top_line=False,
+            show_bottom_line=False,
+        )
 
         draw = ImageDraw.Draw(image)
-        title_font = load_font(TITLE_FONT_PATH, 52)
-        meta_font = load_font(META_FONT_PATH, 26)
-        small_font = load_font(META_FONT_PATH, 20)
+        title_font = load_font(TITLE_FONT_PATH, 58)
+        meta_font = load_font(META_FONT_PATH, 27)
+        small_font = load_font(META_FONT_PATH, 18)
+        brand_font = load_font(TITLE_FONT_PATH, 22)
         brand = resolve_brand_name().upper()
 
         title_text = trim_text(title or "Unknown Title", 70)
-        channel_text = trim_text(channel or brand, 38)
-        title_lines = wrap_text(draw, title_text, title_font, 960, max_lines=2)
-        title_block_height = len(title_lines) * 62
-        title_y = (CANVAS_HEIGHT - title_block_height) // 2 - 20
+        channel_text = trim_text(channel or brand, 34)
+        powered_text = trim_text(f"POWERED BY {brand}", 42)
+        title_lines = wrap_text(draw, title_text, title_font, 700, max_lines=2)
+        title_y = 154
         for index, line in enumerate(title_lines):
-            width = text_width(draw, line, title_font)
             draw_text_with_outline(
                 draw,
-                ((CANVAS_WIDTH - width) // 2, title_y + (index * 62)),
+                (76, title_y + (index * 66)),
                 line,
                 title_font,
-                fill_color=(246, 250, 255),
-                outline_color=(8, 12, 20),
+                fill_color=(250, 253, 255),
+                outline_color=(3, 8, 14),
                 outline_width=2,
             )
 
-        channel_width = text_width(draw, channel_text, meta_font)
+        subtitle_y = title_y + (len(title_lines) * 66) + 16
         draw.text(
-            ((CANVAS_WIDTH - channel_width) // 2, title_y + title_block_height + 18),
+            (78, subtitle_y),
             channel_text,
-            fill=(210, 222, 235),
+            fill=(219, 232, 244),
             font=meta_font,
         )
-        brand_width = text_width(draw, brand, small_font)
+        draw.rounded_rectangle(
+            (78, subtitle_y + 46, 320, subtitle_y + 54),
+            radius=4,
+            fill=(82, 231, 226, 210),
+        )
         draw.text(
-            ((CANVAS_WIDTH - brand_width) // 2, CANVAS_HEIGHT - 86),
-            brand,
-            fill=(164, 180, 198),
+            (78, subtitle_y + 74),
+            powered_text,
+            fill=(174, 192, 210),
             font=small_font,
         )
-        image.save(output_path, "JPEG", quality=92)
+
+        art_x = ART_CARD_BOX[0] + 24
+        art_y = 152
+        art_size = 296
+        art = Image.new("RGBA", (art_size, art_size), (0, 0, 0, 0))
+        art_draw = ImageDraw.Draw(art)
+        for y in range(art_size):
+            mix = y / max(art_size - 1, 1)
+            art_draw.line(
+                [(0, y), (art_size, y)],
+                fill=(
+                    int(22 + 58 * mix),
+                    int(88 + 78 * mix),
+                    int(128 + 72 * mix),
+                    255,
+                ),
+            )
+        art = add_glow(art, (-70, 150, 180, 390), (0, 244, 224, 110), blur_radius=58)
+        art = add_glow(art, (110, -60, 360, 190), (214, 94, 255, 100), blur_radius=62)
+        art_draw = ImageDraw.Draw(art)
+        for offset in range(38, 250, 38):
+            arc_box = (
+                offset - 76,
+                offset - 76,
+                art_size + 76 - offset,
+                art_size + 76 - offset,
+            )
+            if arc_box[2] <= arc_box[0] or arc_box[3] <= arc_box[1]:
+                continue
+            art_draw.arc(
+                arc_box,
+                start=18,
+                end=338,
+                fill=(255, 255, 255, 34),
+                width=2,
+            )
+        draw_waveform(
+            art_draw,
+            42,
+            206,
+            art_size - 84,
+            82,
+            (118, 246, 242),
+            (255, 255, 255),
+            progress_ratio=0.58,
+            segments=42,
+        )
+        art_draw.ellipse((104, 82, 192, 170), fill=(255, 255, 255, 36), outline=(255, 255, 255, 92), width=2)
+        art_draw.ellipse((124, 102, 172, 150), fill=(255, 255, 255, 58))
+        art = rounded_media(art, art_size, radius=42, border_width=5)
+        image = add_glow(
+            image,
+            (art_x - 28, art_y - 28, art_x + art_size + 34, art_y + art_size + 44),
+            (90, 230, 235, 74),
+            blur_radius=78,
+        )
+        image.paste(art, (art_x, art_y), art)
+
+        draw = ImageDraw.Draw(image)
+        progress_left = PLAYBACK_BOX[0] + 32
+        bar_y = PLAYBACK_BOX[1] + 52
+        bar_x_end = PLAYBACK_BOX[2] - 32
+        bar_width = bar_x_end - progress_left
+        draw_waveform(
+            draw,
+            progress_left,
+            bar_y - 2,
+            bar_width,
+            34,
+            (92, 226, 229),
+            (255, 255, 255),
+            progress_ratio=0.5,
+            segments=84,
+        )
+        draw_transport_controls(
+            draw,
+            center_x=(PLAYBACK_BOX[0] + PLAYBACK_BOX[2]) // 2,
+            center_y=PLAYBACK_BOX[1] + 86,
+            accent_color=(92, 226, 229),
+        )
+        brand_width = text_width(draw, brand, brand_font)
+        draw.text(
+            ((BRAND_BOX[0] + BRAND_BOX[2] - brand_width) // 2, BRAND_BOX[1] + 15),
+            brand,
+            fill=(250, 253, 255),
+            font=brand_font,
+        )
+        if output_path.lower().endswith((".jpg", ".jpeg")):
+            image.convert("RGB").save(output_path, "JPEG", quality=94, optimize=True)
+        else:
+            image.save(output_path, "PNG", optimize=True)
         return True
     except Exception:
         return False
@@ -405,13 +595,16 @@ async def download_first_thumbnail(
     if not candidates:
         return False
 
-    results = await asyncio.gather(
-        *(fetch_image_data(session, thumbnail_url) for thumbnail_url in candidates),
-        return_exceptions=True,
-    )
-    for data in results:
-        if isinstance(data, bytes) and await write_verified_image(data, output_path):
-            return True
+    batch_size = 4
+    for start in range(0, len(candidates), batch_size):
+        batch = candidates[start : start + batch_size]
+        results = await asyncio.gather(
+            *(fetch_image_data(session, thumbnail_url) for thumbnail_url in batch),
+            return_exceptions=True,
+        )
+        for data in results:
+            if isinstance(data, bytes) and await write_verified_image(data, output_path):
+                return True
     return False
 
 
@@ -706,6 +899,7 @@ async def get_thumb(videoid, user_id=None):
     url = f"https://www.youtube.com/watch?v={videoid}"
     temp_thumb_path = temp_artwork_path(videoid, cache_user_id)
     output_path = cache_path
+    fallback_output_path = fallback_card_path(videoid, cache_user_id)
     fallback_avatar_path = os.path.join(CACHE_DIR, "elite_avatar_fallback.jpg")
     sp = None
     artwork_source = "missing"
@@ -740,17 +934,16 @@ async def get_thumb(videoid, user_id=None):
                 session,
                 videoid,
                 result,
-                temp_thumb_path,
+                fallback_output_path,
                 title=title,
                 channel=channel,
             )
             if not artwork_path:
-                output_path = fallback_card_path(videoid, cache_user_id)
-                if create_local_fallback_art(output_path, title=title, channel=channel):
-                    return output_path
+                if create_local_fallback_art(fallback_output_path, title=title, channel=channel):
+                    return fallback_output_path
                 return YOUTUBE_IMG_URL
             if artwork_source != "official":
-                output_path = fallback_card_path(videoid, cache_user_id)
+                return artwork_path
 
         if user_id is not None:
             try:
