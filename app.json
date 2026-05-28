@@ -74,7 +74,7 @@
     "WORKER_FALLBACK_API_URL": {
       "description": "(Optional) YouTube fallback converter API endpoint.",
       "required": false,
-      "value": "https://youtubeapi-4899a42b3b68.herokuapp.com"
+      "value": "https://youtubenewapi.skybotsdeveloper.workers.dev"
     },
     "WORKER_FALLBACK_API_KEY": {
       "description": "(Optional) API key for the YouTube fallback converter API.",

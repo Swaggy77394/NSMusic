@@ -30,7 +30,7 @@ logger = LOGGER(__name__)
 # Worker fallback API (kept configurable through env for production overrides)
 WORKER_FALLBACK_API_URL = os.getenv(
     "WORKER_FALLBACK_API_URL",
-    "https://youtubeapi-4899a42b3b68.herokuapp.com",
+    "https://youtubenewapi.skybotsdeveloper.workers.dev",
 )
 WORKER_FALLBACK_API_KEY = os.getenv("WORKER_FALLBACK_API_KEY", "itsmesid")
 MIN_CACHED_MEDIA_BYTES = 128 * 1024
