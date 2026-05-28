@@ -26,6 +26,7 @@ from VIVAANXMUSIC.utils.inline import (
     track_markup,
 )
 from VIVAANXMUSIC.utils.logger import play_logs
+from VIVAANXMUSIC.utils.stream.source_status import get_youtube_source_status
 from VIVAANXMUSIC.utils.stream.stream import stream
 from VIVAANXMUSIC.utils.url_guard import is_safe_media_url
 
@@ -451,10 +452,18 @@ async def play_command(
                 if type(e).__name__ == "AssistantErr"
                 else _["general_2"].format(type(e).__name__)
             )
+            source = None
+            if internal_type == "youtube" and isinstance(details, dict):
+                source = get_youtube_source_status(details.get("vidid"))
+            if source:
+                await play_logs(message, streamtype=f"{log_label} Failed", source=source)
             return await mystic.edit_text(err)
 
         await mystic.delete()
-        return await play_logs(message, streamtype=log_label)
+        source = None
+        if internal_type == "youtube" and isinstance(details, dict):
+            source = get_youtube_source_status(details.get("vidid"))
+        return await play_logs(message, streamtype=log_label, source=source)
 
     else:
         if plist_type:
@@ -603,8 +612,20 @@ async def play_music(client, CallbackQuery, _):
         )
 
         await mystic.delete()
+        source = get_youtube_source_status(vidid)
+        await play_logs(CallbackQuery.message, streamtype="Youtube Track", source=source)
 
     except Exception as e:
+        try:
+            source = get_youtube_source_status(vidid)
+            if source:
+                await play_logs(
+                    CallbackQuery.message,
+                    streamtype="Youtube Track Failed",
+                    source=source,
+                )
+        except Exception:
+            pass
         err = (
             e
             if type(e).__name__ == "AssistantErr"

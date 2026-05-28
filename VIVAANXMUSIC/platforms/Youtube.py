@@ -23,6 +23,7 @@ from VIVAANXMUSIC.utils.database import is_on_off
 from VIVAANXMUSIC.utils.formatters import time_to_seconds
 from VIVAANXMUSIC.utils.url_guard import is_safe_media_url
 from VIVAANXMUSIC.security import build_subprocess_env
+from VIVAANXMUSIC.utils.stream.source_status import set_youtube_source_status
 from config import DURATION_LIMIT, YT_API_KEY, YTPROXY_URL
 
 logger = LOGGER(__name__)
@@ -695,17 +696,31 @@ class YouTubeAPI:
                     return value
             return None
 
-        def log_primary_api_issue(media_type, message):
+        def mark_source(vid_id, media_type, source, ok=True):
+            state = "OK" if ok else "FAILED"
+            text = f"{source} {state} ({media_type})"
+            set_youtube_source_status(vid_id, text)
+            logger.info(
+                "YouTube source %s | source=%s | media=%s | video_id=%s",
+                state.lower(),
+                source.lower().replace(" ", "_"),
+                media_type,
+                vid_id,
+            )
+
+        def log_primary_api_issue(media_type, vid_id, message):
             if WORKER_FALLBACK_API_URL and WORKER_FALLBACK_API_KEY:
                 logger.info(
-                    "Primary paid %s API unavailable: %s Trying worker fallback.",
+                    "Primary xBit API failed | media=%s | video_id=%s | reason=%s | next=worker_fallback",
                     media_type,
+                    vid_id,
                     message,
                 )
                 return
             logger.warning(
-                "Primary paid %s API unavailable: %s Worker fallback is not configured.",
+                "Primary xBit API failed | media=%s | video_id=%s | reason=%s | next=none",
                 media_type,
+                vid_id,
                 message,
             )
 
@@ -729,16 +744,30 @@ class YouTubeAPI:
                 data = response.json()
 
                 if not data.get("success"):
-                    logger.error(f"Worker fallback API error: {data.get('error', 'Unknown error')}")
+                    logger.error(
+                        "Worker fallback API failed | format=%s | video_id=%s | reason=%s",
+                        media_format,
+                        vid_id,
+                        data.get("error", "Unknown error"),
+                    )
                     return None
 
                 media_url = select_media_link(data, prefer_stream=bool(stream))
                 if not media_url:
-                    logger.error("Worker fallback API succeeded without a media URL.")
+                    logger.error(
+                        "Worker fallback API failed | format=%s | video_id=%s | reason=no media url",
+                        media_format,
+                        vid_id,
+                    )
                     return None
                 return media_url
             except Exception as e:
-                logger.error(f"Worker fallback request failed: {str(e)}")
+                logger.error(
+                    "Worker fallback API failed | format=%s | video_id=%s | reason=%s",
+                    media_format,
+                    vid_id,
+                    str(e),
+                )
                 return None
             finally:
                 if session:
@@ -752,6 +781,7 @@ class YouTubeAPI:
         async def audio_dl(vid_id):
             filepath = os.path.join("downloads", f"{vid_id}.mp3")
             if cached_media_ready(filepath):
+                mark_source(vid_id, "audio", "LOCAL CACHE")
                 return filepath, True
             if os.path.exists(filepath):
                 try:
@@ -783,16 +813,21 @@ class YouTubeAPI:
                     elif status == 'error':
                         log_primary_api_issue(
                             "audio",
+                            vid_id,
                             song_data.get('message', 'Unknown error from API.'),
                         )
                     else:
-                        log_primary_api_issue("audio", "unexpected response while fetching audio")
+                        log_primary_api_issue(
+                            "audio",
+                            vid_id,
+                            "unexpected response while fetching audio",
+                        )
                 except requests.exceptions.RequestException as e:
-                    log_primary_api_issue("audio", f"network error: {str(e)}")
+                    log_primary_api_issue("audio", vid_id, f"network error: {str(e)}")
                 except json.JSONDecodeError as e:
-                    log_primary_api_issue("audio", f"invalid response: {str(e)}")
+                    log_primary_api_issue("audio", vid_id, f"invalid response: {str(e)}")
                 except Exception as e:
-                    log_primary_api_issue("audio", str(e))
+                    log_primary_api_issue("audio", vid_id, str(e))
                 finally:
                     if session:
                         session.close()
@@ -801,29 +836,38 @@ class YouTubeAPI:
 
             if paid_audio_url:
                 if stream and await validate_stream_source(paid_audio_url):
+                    mark_source(vid_id, "audio", "PRIMARY XBIT")
                     schedule_background_cache(paid_audio_url, filepath, headers)
                     return paid_audio_url, False
                 result = await download_from_source(paid_audio_url, filepath, headers)
                 if result:
+                    mark_source(vid_id, "audio", "PRIMARY XBIT")
                     return result, True
                 logger.warning("Paid audio URL download failed, trying worker fallback.")
 
             fallback_audio_url = await get_worker_fallback_link(vid_id, "mp3")
             if fallback_audio_url:
                 if stream and await validate_stream_source(fallback_audio_url):
+                    mark_source(vid_id, "audio", "WORKER FALLBACK")
                     schedule_background_cache(fallback_audio_url, filepath)
                     return fallback_audio_url, False
                 result = await download_from_source(fallback_audio_url, filepath)
                 if result:
+                    mark_source(vid_id, "audio", "WORKER FALLBACK")
                     return result, True
 
-            logger.error("Audio download failed on both paid API and worker fallback.")
+            mark_source(vid_id, "audio", "PRIMARY XBIT + WORKER FALLBACK", ok=False)
+            logger.error(
+                "YouTube source failed | sources=primary_xbit,worker_fallback | media=audio | video_id=%s",
+                vid_id,
+            )
             return None, True
         
         
         async def video_dl(vid_id):
             filepath = os.path.join("downloads", f"{vid_id}.mp4")
             if cached_media_ready(filepath):
+                mark_source(vid_id, "video", "LOCAL CACHE")
                 return filepath, True
             if os.path.exists(filepath):
                 try:
@@ -855,16 +899,21 @@ class YouTubeAPI:
                     elif status == 'error':
                         log_primary_api_issue(
                             "video",
+                            vid_id,
                             video_data.get('message', 'Unknown error from API.'),
                         )
                     else:
-                        log_primary_api_issue("video", "unexpected response while fetching video")
+                        log_primary_api_issue(
+                            "video",
+                            vid_id,
+                            "unexpected response while fetching video",
+                        )
                 except requests.exceptions.RequestException as e:
-                    log_primary_api_issue("video", f"network error: {str(e)}")
+                    log_primary_api_issue("video", vid_id, f"network error: {str(e)}")
                 except json.JSONDecodeError as e:
-                    log_primary_api_issue("video", f"invalid response: {str(e)}")
+                    log_primary_api_issue("video", vid_id, f"invalid response: {str(e)}")
                 except Exception as e:
-                    log_primary_api_issue("video", str(e))
+                    log_primary_api_issue("video", vid_id, str(e))
                 finally:
                     if session:
                         session.close()
@@ -873,23 +922,31 @@ class YouTubeAPI:
 
             if paid_video_url:
                 if stream and await validate_stream_source(paid_video_url):
+                    mark_source(vid_id, "video", "PRIMARY XBIT")
                     schedule_background_cache(paid_video_url, filepath, headers)
                     return paid_video_url, False
                 result = await download_from_source(paid_video_url, filepath, headers)
                 if result:
+                    mark_source(vid_id, "video", "PRIMARY XBIT")
                     return result, True
                 logger.warning("Paid video URL download failed, trying worker fallback.")
 
             fallback_video_url = await get_worker_fallback_link(vid_id, "mp4")
             if fallback_video_url:
                 if stream and await validate_stream_source(fallback_video_url):
+                    mark_source(vid_id, "video", "WORKER FALLBACK")
                     schedule_background_cache(fallback_video_url, filepath)
                     return fallback_video_url, False
                 result = await download_from_source(fallback_video_url, filepath)
                 if result:
+                    mark_source(vid_id, "video", "WORKER FALLBACK")
                     return result, True
 
-            logger.error("Video download failed on both paid API and worker fallback.")
+            mark_source(vid_id, "video", "PRIMARY XBIT + WORKER FALLBACK", ok=False)
+            logger.error(
+                "YouTube source failed | sources=primary_xbit,worker_fallback | media=video | video_id=%s",
+                vid_id,
+            )
             return None, True
         
         def song_video_dl():
