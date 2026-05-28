@@ -1090,16 +1090,6 @@ async def get_social_bundle(platform: str, url: str) -> SocialDownloadBundle:
                     ),
                 ),
                 (
-                    "Public Cobalt Pool",
-                    "cobalt:tracker_pool",
-                    lambda: _fetch_via_tracker_instances(
-                        client,
-                        safe_url,
-                        platform=platform,
-                        excluded_endpoints={PYBALT_API_URL, LEGACY_COBALT_API_URL},
-                    ),
-                ),
-                (
                     "Legacy API",
                     "cobalt:legacy",
                     lambda: _fetch_via_cobalt_api(
@@ -1107,6 +1097,16 @@ async def get_social_bundle(platform: str, url: str) -> SocialDownloadBundle:
                         safe_url,
                         endpoint=LEGACY_COBALT_API_URL,
                         source_name="Legacy API",
+                    ),
+                ),
+                (
+                    "Public Cobalt Tracker",
+                    "cobalt:tracker_pool",
+                    lambda: _fetch_via_tracker_instances(
+                        client,
+                        safe_url,
+                        platform=platform,
+                        excluded_endpoints={PYBALT_API_URL, LEGACY_COBALT_API_URL},
                     ),
                 ),
             ]

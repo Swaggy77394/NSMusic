@@ -1,3 +1,4 @@
+import base64
 from io import BytesIO
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -226,11 +227,30 @@ async def pyrogram_to_quotly(messages, is_reply):
         else:
             the_message_dict_to_append["replyMessage"] = {}
         payload["messages"].append(the_message_dict_to_append)
-    r = await fetch.post("https://bot.lyo.su/quote/generate.png", json=payload)
-    if not r.is_error:
-        return r.read()
-    else:
-        raise QuotlyException(r.json())
+    errors = []
+
+    try:
+        r = await fetch.post("https://bot.lyo.su/quote/generate", json=payload)
+        if not r.is_error:
+            data = r.json()
+            image_data = ((data.get("result") or {}).get("image") or "").strip()
+            if image_data:
+                return base64.b64decode(image_data)
+            errors.append("quote/generate returned no image")
+        else:
+            errors.append(str(r.json()))
+    except Exception as exc:
+        errors.append(str(exc))
+
+    try:
+        r = await fetch.post("https://bot.lyo.su/quote/generate.png", json=payload)
+        if not r.is_error:
+            return r.read()
+        errors.append(str(r.json()))
+    except Exception as exc:
+        errors.append(str(exc))
+
+    raise QuotlyException("; ".join(errors[-2:]))
 # ------------------------------------------------------------------------------------------
 
 # Helper function to check if an argument is an integer
