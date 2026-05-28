@@ -7,7 +7,7 @@ from typing import Union
 from ntgcalls import TelegramServerError
 from pyrogram import Client
 from pyrogram.enums import ChatType
-from pyrogram.errors import ChatAdminRequired
+from pyrogram.errors import ChatAdminRequired, ChatSendPlainForbidden, ChatWriteForbidden, Forbidden
 from pyrogram.handlers import RawUpdateHandler
 from pyrogram.raw.functions.channels import GetFullChannel
 from pyrogram.raw.functions.messages import GetFullChat
@@ -34,6 +34,7 @@ from VIVAANXMUSIC.utils.database import (
     remove_active_chat,
     remove_active_video_chat,
     set_loop,
+    set_vcnotify,
 )
 from VIVAANXMUSIC.utils.exceptions import AssistantErr
 from VIVAANXMUSIC.utils.formatters import check_duration, seconds_to_min, speed_converter
@@ -224,10 +225,20 @@ class Call:
             name = "Unknown User"
             username = ""
 
-        await app.send_message(
-            notify_chat_id,
-            f"Joined VC\nName: {name}{username}\nUser ID: <code>{user_id}</code>",
-        )
+        try:
+            await app.send_message(
+                notify_chat_id,
+                f"Joined VC\nName: {name}{username}\nUser ID: <code>{user_id}</code>",
+            )
+        except (ChatWriteForbidden, ChatSendPlainForbidden, Forbidden):
+            LOGGER(__name__).warning(
+                "Disabling VC join notifications for chat %s because the bot cannot send messages there.",
+                notify_chat_id,
+            )
+            try:
+                await set_vcnotify(notify_chat_id, False)
+            except Exception:
+                pass
 
     async def _handle_group_call_participants_update(
         self,
@@ -685,6 +696,38 @@ class Call:
             allow_autoplay=False,
         )
 
+    async def _download_youtube_queue_source(
+        self,
+        videoid: str,
+        mystic,
+        streamtype,
+        modes=("local", "stream"),
+    ):
+        is_video = str(streamtype) == "video"
+        for mode in modes:
+            use_stream_url = mode == "stream"
+            try:
+                file_path, direct = await YouTube.download(
+                    videoid,
+                    mystic,
+                    videoid=True,
+                    video=is_video,
+                    stream=use_stream_url,
+                )
+            except Exception as err:
+                LOGGER(__name__).warning(
+                    "YouTube queue source fetch failed for %s using %s mode: %s",
+                    videoid,
+                    mode,
+                    err,
+                )
+                continue
+
+            if file_path:
+                return file_path, direct, mode
+
+        return None, False, "missing"
+
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
@@ -793,30 +836,11 @@ class Call:
 
             elif "vid_" in queued:
                 mystic = await app.send_message(original_chat_id, _["call_7"])
-                direct = False
-                used_fallback = False
-                try:
-                    file_path, direct = await YouTube.download(
-                        videoid,
-                        mystic,
-                        videoid=True,
-                        video=True if str(streamtype) == "video" else False,
-                        stream=True,
-                    )
-                except Exception:
-                    file_path, direct = None, False
-
-                if not file_path and not direct:
-                    try:
-                        file_path, direct = await YouTube.download(
-                            videoid,
-                            mystic,
-                            videoid=True,
-                            video=True if str(streamtype) == "video" else False,
-                        )
-                        used_fallback = True
-                    except Exception:
-                        file_path, direct = None, False
+                file_path, direct, source_mode = await self._download_youtube_queue_source(
+                    videoid,
+                    mystic,
+                    streamtype,
+                )
 
                 if not file_path:
                     try:
@@ -835,17 +859,14 @@ class Call:
                 try:
                     await self._play_stream(client, chat_id, stream)
                 except:
-                    if direct or used_fallback:
+                    if source_mode == "stream":
                         return await app.send_message(original_chat_id, text=_["call_6"])
-                    try:
-                        fallback_path, fallback_direct = await YouTube.download(
-                            videoid,
-                            mystic,
-                            videoid=True,
-                            video=True if str(streamtype) == "video" else False,
-                        )
-                    except Exception:
-                        fallback_path, fallback_direct = None, False
+                    fallback_path, fallback_direct, fallback_mode = await self._download_youtube_queue_source(
+                        videoid,
+                        mystic,
+                        streamtype,
+                        modes=("stream",),
+                    )
                     if not fallback_path:
                         try:
                             await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
@@ -858,7 +879,7 @@ class Call:
                         ):
                             return
                         continue
-                    file_path, direct = fallback_path, fallback_direct
+                    file_path, direct, source_mode = fallback_path, fallback_direct, fallback_mode
                     stream = dynamic_media_stream(path=file_path, video=video)
                     try:
                         await self._play_stream(client, chat_id, stream)
@@ -1046,6 +1067,11 @@ class Call:
             try:
                 if isinstance(update, UpdateGroupCallParticipants):
                     await self._handle_group_call_participants_update(update)
+            except (ChatWriteForbidden, ChatSendPlainForbidden, Forbidden) as err:
+                LOGGER(__name__).warning(
+                    "VC notify update ignored because the bot cannot write to the target chat: %s",
+                    err,
+                )
             except Exception:
                 import sys, traceback
                 exc_type, exc_obj, exc_tb = sys.exc_info()
