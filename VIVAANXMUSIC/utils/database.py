@@ -566,6 +566,11 @@ async def add_served_user(user_id: int):
     return await usersdb.insert_one({"user_id": user_id})
 
 
+async def remove_served_user(user_id: int):
+    if await is_served_user(user_id):
+        await usersdb.delete_one({"user_id": user_id})
+
+
 async def get_served_chats() -> list:
     chats_list = []
     async for chat in chatsdb.find({"chat_id": {"$lt": 0}}):
