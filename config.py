@@ -96,15 +96,15 @@ STICKERS = [
     "CAACAgUAAx0Cd6nKUAACASBl_rnalOle6g7qS-ry-aZ1ZpVEnwACgg8AAizLEFfI5wfykoCR4h4E",
     "CAACAgUAAx0Cd6nKUAACATJl_rsEJOsaaPSYGhU7bo7iEwL8AAPMDgACu2PYV8Vb8aT4_HUPHgQ",
 ]
-HELP_IMG_URL = "https://files.catbox.moe/22oahi.jpg"
-PING_VID_URL = "https://files.catbox.moe/5z1qte.mp4"
-PLAYLIST_IMG_URL = "https://files.catbox.moe/u79q4y.jpg"
-STATS_VID_URL = "https://files.catbox.moe/uo4lc8.mp4"
-TELEGRAM_AUDIO_URL = "https://files.catbox.moe/eis7ei.jpg"
-TELEGRAM_VIDEO_URL = "https://files.catbox.moe/eis7ei.jpg"
-STREAM_IMG_URL = "https://files.catbox.moe/eis7ei.jpg"
-SOUNCLOUD_IMG_URL = "https://files.catbox.moe/eis7ei.jpg"
-YOUTUBE_IMG_URL = "https://files.catbox.moe/eis7ei.jpg"
+HELP_IMG_URL = "https://files.catbox.moe/dfj1l8.jpg"
+PING_VID_URL = "https://litter.catbox.moe/ks250k.jpg"
+PLAYLIST_IMG_URL = "https://files.catbox.moe/dfj1l8.jpg"
+STATS_VID_URL = "https://litter.catbox.moe/3jaudz.jpg"
+TELEGRAM_AUDIO_URL = "https://files.catbox.moe/dfj1l8.jpg"
+TELEGRAM_VIDEO_URL = "https://files.catbox.moe/dfj1l8.jpg"
+STREAM_IMG_URL = "https://files.catbox.moe/dfj1l8.jpg"
+SOUNCLOUD_IMG_URL = "https://files.catbox.moe/dfj1l8.jpg"
+YOUTUBE_IMG_URL = "https://files.catbox.moe/dfj1l8.jpg"
 SPOTIFY_ARTIST_IMG_URL = SPOTIFY_ALBUM_IMG_URL = SPOTIFY_PLAYLIST_IMG_URL = YOUTUBE_IMG_URL
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
