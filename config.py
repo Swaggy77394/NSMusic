@@ -9,17 +9,17 @@ load_dotenv()
 # ── Core bot config ────────────────────────────────────────────────────────────
 API_ID = int(getenv("API_ID", 27798659))
 API_HASH = getenv("API_HASH", "26100c77cee02e5e34b2bbee58440f86")
-BOT_TOKEN = getenv("BOT_TOKEN", "")
+BOT_TOKEN = getenv("BOT_TOKEN")
 
-OWNER_ID = int(getenv("OWNER_ID", "8261764980"))
-OWNER_USERNAME = getenv("OWNER_USERNAME", "NullXShadow")
-BOT_USERNAME = getenv("BOT_USERNAME", "DivineMusicXRobot")
-BOT_NAME = getenv("BOT_NAME", "˹𝐕ɪᴠᴀᴀɴ ✘ 𝙼ᴜsɪᴄ˼ ♪")
-ASSUSERNAME = getenv("ASSUSERNAME", "Vivaanassistant")
+OWNER_ID = int(getenv("OWNER_ID", 924235973))
+OWNER_USERNAME = getenv("OWNER_USERNAME", "SexyProfessor")
+BOT_USERNAME = getenv("BOT_USERNAME", "SigmaaMusicBot")
+BOT_NAME = getenv("BOT_NAME", "𝙎𝙄𝙂𝙈𝘼 𝙈𝙐𝙎𝙄𝘾")
+ASSUSERNAME = getenv("ASSUSERNAME", "kashish_Xd")
 
 # ── Database & logging ─────────────────────────────────────────────────────────
-MONGO_DB_URI = getenv("MONGO_DB_URI", "")
-LOGGER_ID = int(getenv("LOGGER_ID", ""))
+MONGO_DB_URI = getenv("MONGO_DB_URI")
+LOGGER_ID = int(getenv("LOGGER_ID", -1003792919759))
 
 # ── Limits (durations in min/sec; sizes in bytes) ──────────────────────────────
 DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 300))
@@ -52,13 +52,13 @@ HEROKU_APP_NAME = getenv("HEROKU_APP_NAME")
 HEROKU_API_KEY = getenv("HEROKU_API_KEY")
 
 # ── Git / updates ──────────────────────────────────────────────────────────────
-UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/Protricks/VIVANXMUSIC")
+UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/Swaggy77394/NSMusic")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
 GIT_TOKEN = getenv("GIT_TOKEN")  # needed if repo is private
 
 # ── Support links ──────────────────────────────────────────────────────────────
-SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/VivaanUpdates")
-SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/VivaanSupport")
+SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/SpicyXNetwork")
+SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/+sTyS-zKwUIk4YWI1")
 
 # ── Assistant auto-leave ───────────────────────────────────────────────────────
 AUTO_LEAVING_ASSISTANT = True
