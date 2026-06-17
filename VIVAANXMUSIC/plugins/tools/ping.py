@@ -15,7 +15,7 @@ from config import BANNED_USERS, PING_VID_URL
 @language
 async def ping_com(client, message: Message, _):
     start = datetime.now()
-    response = await message.reply_video(
+    response = await message.reply_photo(
         video=PING_VID_URL,
         caption=_["ping_1"].format(app.mention),
     )
