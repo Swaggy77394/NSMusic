@@ -43,3 +43,4 @@ tgcrypto
 unidecode
 wget
 yt-dlp==2026.3.17
+py-yt-search~=0.6.1
