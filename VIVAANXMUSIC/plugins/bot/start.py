@@ -123,18 +123,18 @@ async def start_pm(client, message: Message, _):
                 await m.edit_text(f"Error: {e}")
             return
 
-   out = private_panel(_)
-sticker_message = await message.reply_sticker(sticker=random.choice(STICKERS))
-asyncio.create_task(delete_sticker_after_delay(sticker_message, 2))
+    out = private_panel(_)
+    sticker_message = await message.reply_sticker(sticker=random.choice(STICKERS))
+    asyncio.create_task(delete_sticker_after_delay(sticker_message, 2))
 
-await message.reply_photo(
-    random.choice(START_VIDS),
-    caption=random.choice(AYUV).format(
-        message.from_user.mention, app.mention, config.OWNER_NAME
-    ),
-    reply_markup=InlineKeyboardMarkup(out),
-    has_spoiler=True,
-)
+    await message.reply_photo(
+        random.choice(START_VIDS),
+        caption=random.choice(AYUV).format(
+            message.from_user.mention, app.mention, config.OWNER_NAME
+        ),
+        reply_markup=InlineKeyboardMarkup(out),
+        has_spoiler=True,
+    )
 
     if await is_on_off(2):
         username = f"@{message.from_user.username}" if message.from_user.username else "(none)"
