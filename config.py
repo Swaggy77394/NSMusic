@@ -9,7 +9,7 @@ load_dotenv()
 # ── Core bot config ────────────────────────────────────────────────────────────
 API_ID = int(getenv("API_ID", 27798659))
 API_HASH = getenv("API_HASH", "26100c77cee02e5e34b2bbee58440f86")
-BOT_TOKEN = getenv("BOT_TOKEN", "8380600622:AAEEEUDZeg-1RZh4iTFVvHqE6ERc2Ft9HKc")
+BOT_TOKEN = getenv("BOT_TOKEN", "")
 
 OWNER_ID = int(getenv("OWNER_ID", "8261764980"))
 OWNER_USERNAME = getenv("OWNER_USERNAME", "NullXShadow")
@@ -18,8 +18,8 @@ BOT_NAME = getenv("BOT_NAME", "˹𝐕ɪᴠᴀᴀɴ ✘ 𝙼ᴜsɪᴄ˼ ♪")
 ASSUSERNAME = getenv("ASSUSERNAME", "Vivaanassistant")
 
 # ── Database & logging ─────────────────────────────────────────────────────────
-MONGO_DB_URI = getenv("MONGO_DB_URI", "mongodb+srv://Mafia:Mafia@mafia.wvuzxgl.mongodb.net/?retryWrites=true&w=majority")
-LOGGER_ID = int(getenv("LOGGER_ID", "-1002093750764"))
+MONGO_DB_URI = getenv("MONGO_DB_URI", "")
+LOGGER_ID = int(getenv("LOGGER_ID", ""))
 
 # ── Limits (durations in min/sec; sizes in bytes) ──────────────────────────────
 DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 300))
@@ -72,7 +72,7 @@ SPOTIFY_CLIENT_ID = getenv("SPOTIFY_CLIENT_ID", "22b6125bfe224587b722d6815002db2
 SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "c9c63c6fbf2f467c8bc68624851e9773")
 
 # ── Session strings (optional) ─────────────────────────────────────────────────
-STRING1 = getenv("STRING_SESSION", "BQIyusoAZ8F6M6pbqQ41SwuhC5f91M688cKep_6kEs2kY3IiylysqJY7sZ319eVEOdopGwHsA2GSMo38ksv0RtrqGPa1Ndo7HHefZgtX4svLf7ItvhG6WWA5en44dlQRlMHhboN9wyz5rKmLDQ97GTYl46iVEZgwgWcF_tTW6BU-XeXWHdi2B-vSviHqGsmMn5ky1cyE6xrNbCEd1zlcqO6CPfIAM3RhDSpST6bdVh1t3nep5aYdXf42kR1lAGsTF-IrFpWm34N3phunCX-AAusAkE3fFZfzcfsYoHjKAqoA-N_F73JaTlMe1A82-V6UkzrUasX9hojm4cY78u3zaYSs_UWoYwAAAAICjuc6AA")
+STRING1 = getenv("STRING_SESSION", "")
 STRING2 = getenv("STRING_SESSION2")
 STRING3 = getenv("STRING_SESSION3")
 STRING4 = getenv("STRING_SESSION4")
