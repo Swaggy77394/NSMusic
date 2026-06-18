@@ -14,7 +14,6 @@ gradio_client==2.3.0
 gpytranslate
 gtts
 heroku3
-httpx[http2]==0.28.1
 indic-transliteration
 kurigram==2.2.23
 motor
@@ -43,4 +42,5 @@ tgcrypto
 unidecode
 wget
 yt-dlp==2026.3.17
-py-yt-search~=0.6.1
+py-yt-search
+httpx==0.28.1
