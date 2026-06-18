@@ -26,7 +26,7 @@ ntgcalls==2.1.0
 opencv-python>=4.10.0
 pillow>=11.0.0
 psutil~=6.1.0
-py-tgcalls==2.2.11
+py-tgcalls==0.9.7
 pycryptodome
 pydub
 pyfiglet
