@@ -17,7 +17,7 @@ class YouTube:
             r"(youtube\.com/(watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
             r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^\s]*)?"
         )
-        self.cookie_dir = "AloneX/cookies"
+        self.cookie_dir = "VIVAANXMUSIC/assets/cookies.txt"
 
     def get_cookies(self):
         if not os.path.exists(self.cookie_dir):
