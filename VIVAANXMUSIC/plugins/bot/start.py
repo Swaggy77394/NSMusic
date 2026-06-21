@@ -4,7 +4,7 @@ import time
 from pyrogram import enums, filters
 from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
-from py_yt import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 import config
 from VIVAANXMUSIC import app
