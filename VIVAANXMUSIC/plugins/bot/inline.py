@@ -3,7 +3,7 @@ from pyrogram.types import (
     InlineKeyboardMarkup,
     InlineQueryResultPhoto,
 )
-from py_yt import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 from VIVAANXMUSIC.utils.inlinequery import answer
 from VIVAANXMUSIC.button_styles import primary_button
