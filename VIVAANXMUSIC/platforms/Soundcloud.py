@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, Optional, Tuple, Union
 
 from yt_dlp import YoutubeDL
-from py_yt import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 from VIVAANXMUSIC.utils.downloader import download_audio_concurrent
 from VIVAANXMUSIC.utils.formatters import seconds_to_min
