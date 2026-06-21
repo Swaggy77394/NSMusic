@@ -10,7 +10,7 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
-from py_yt import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 
 HTTP_TIMEOUT = httpx.Timeout(20.0, connect=8.0)
