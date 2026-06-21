@@ -3,7 +3,7 @@ import re
 import httpx
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from py_yt import VideosSearch
+from youtubesearchpython.future import VideosSearch
 
 import config
 
